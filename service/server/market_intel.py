@@ -310,12 +310,15 @@ def _gemini_generate_text(prompt: str, system_instruction: Optional[str] = None)
         "gemini-2.5-flash-lite",
         "gemini-1.5-flash-latest"
     ]
-    
-    max_retries_per_model = 3
-    initial_delay = 1.0 # seconds
-    
+
+    # 1. Try Groq FIRST (Primary - speed and reliability)
+    if GROQ_API_KEY:
+        groq_result = _groq_generate_text(prompt, system_instruction=system_instruction)
+        if groq_result:
+            return groq_result
+
+    # 2. Gemini Fallback Chain (Secondary)
     headers = {"Content-Type": "application/json"}
-    
     payload: dict[str, Any] = {
         "contents": [{"parts": [{"text": prompt}]}],
         "generationConfig": {
@@ -329,8 +332,6 @@ def _gemini_generate_text(prompt: str, system_instruction: Optional[str] = None)
             "parts": [{"text": system_instruction}]
         }
 
-    # Gentle Retry Logic: Try each model once. 
-    # If all return 429, wait 5 minutes to let the quota reset.
     any_429 = False
     
     for model_name in models:
@@ -341,12 +342,11 @@ def _gemini_generate_text(prompt: str, system_instruction: Optional[str] = None)
             response = requests.post(url, headers=headers, json=payload, timeout=45)
             
             if response.status_code == 429:
-                print(f"[Gemini 429] Model {model_name} is rate limited. Trying next model...")
+                print(f"[Gemini 429] Model {model_name} is rate limited. Trying next fallback...")
                 any_429 = True
                 continue
                 
             if response.status_code == 404:
-                # print(f"[Gemini Skip] Model {model_name} not found (404).")
                 continue
 
             response.raise_for_status()
@@ -366,22 +366,15 @@ def _gemini_generate_text(prompt: str, system_instruction: Optional[str] = None)
                 return full_text.strip(), model_name
 
         except Exception as e:
-            # For connection/timeout errors, just try next model
+            # For connection/timeout errors, try next fallback
             pass
 
-    if any_429 and GROQ_API_KEY:
-        # Gemini is blocked - try Groq as a reliable backup
-        print(f"[AI Fallback] Gemini returned 429. Trying Groq (llama-3.3-70b)...")
-        groq_result = _groq_generate_text(prompt, system_instruction=system_instruction)
-        if groq_result:
-            return groq_result
-
     if any_429:
-        # All models (Gemini + Groq) failed or rate limited - take a forced 5-minute break
-        print(f"[AI Cooldown] All AI providers returned 429 or failed. Sleeping 300s...")
+        # Both Groq and Gemini are rate-limited - forced break
+        print(f"[AI Cooldown] All primary and fallback models returned 429. Sleeping 300s...")
         time.sleep(300)
     else:
-        print("[AI Critical] All models failed without clear rate limit code.")
+        print("[AI Critical] All providers failed without clear recovery path.")
         
     return None
 
