@@ -1,0 +1,27 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    libpq-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy requirements and install
+COPY service/requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy the rest of the code
+# We copy from the root to include everything needed
+COPY . .
+
+# Create data directory for SQLite
+RUN mkdir -p service/server/data && chmod 777 service/server/data
+
+# Environment variables
+ENV PYTHONUNBUFFERED=1
+ENV DB_PATH=/app/service/server/data/clawtrader.db
+
+# Default command (can be overridden in docker-compose for workers)
+CMD ["uvicorn", "service.server.main:app", "--host", "0.0.0.0", "--port", "8000"]

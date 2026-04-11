@@ -489,7 +489,8 @@ async def refresh_stock_analysis_snapshots_loop():
 
     refresh_interval = _env_int("STOCK_ANALYSIS_REFRESH_INTERVAL", 7200, minimum=600)
 
-    await asyncio.sleep(12)
+    # Wait 30 seconds to let news finish first (respecting AV limits)
+    await asyncio.sleep(30)
 
     while True:
         try:
@@ -504,6 +505,37 @@ async def refresh_stock_analysis_snapshots_loop():
 
         print(f"[Market Intel] Next stock analysis refresh in {refresh_interval} seconds")
         await asyncio.sleep(refresh_interval)
+
+
+async def refresh_crypto_sniper_snapshots_loop():
+    """Background task to refresh Crypto Sniper snapshots on a 5-minute interval."""
+    from market_intel import refresh_crypto_sniper_snapshot
+
+    # Interval is fixed to 300s (5min) as per user request
+    refresh_interval = _env_int("CRYPTO_SNIPER_REFRESH_INTERVAL", 300, minimum=60)
+
+    # Short delay at startup to stagger tasks
+    await asyncio.sleep(15)
+
+    while True:
+        try:
+            print("[Crypto Sniper] Scouting for opportunities...")
+            result = await asyncio.to_thread(refresh_crypto_sniper_snapshot)
+            if "symbol" in result:
+                print(
+                    "[Crypto Sniper] Found opportunity: "
+                    f"symbol={result.get('symbol')} "
+                    f"signal={result.get('signal')}"
+                )
+            else:
+                print(f"[Crypto Sniper] No clear opportunity: {result.get('message')}")
+        except Exception as e:
+            print(f"[Crypto Sniper Error] {e}")
+
+        # Use dynamic interval
+        from market_intel import get_crypto_sniper_interval
+        current_interval = get_crypto_sniper_interval()
+        await asyncio.sleep(current_interval)
 
 
 async def periodic_token_cleanup():
@@ -713,6 +745,144 @@ async def settle_polymarket_positions():
         await asyncio.sleep(interval_s)
 
 
+async def telegram_command_polling_loop():
+    """Poll for Telegram commands and BUTTON clicks to control the bot dynamically."""
+    from notifications import get_telegram_updates, send_telegram_notification
+    from market_intel import get_crypto_sniper_interval, set_crypto_sniper_interval
+    import os
+    import json
+    
+    last_update_id = None
+    target_chat_id = str(os.getenv("TELEGRAM_CHAT_ID", ""))
+    
+    # Predefined Keyboards
+    main_menu = {
+        "keyboard": [
+            [{"text": "📊 Status"}, {"text": "⏱ Set Interval"}],
+            [{"text": "🏓 Ping"}, {"text": "🔄 Help"}]
+        ],
+        "resize_keyboard": True,
+        "persistent": True
+    }
+    
+    interval_inline_kb = {
+        "inline_keyboard": [
+            [
+                {"text": "5 min", "callback_data": "set_int_300"},
+                {"text": "10 min", "callback_data": "set_int_600"},
+            ],
+            [
+                {"text": "15 min", "callback_data": "set_int_900"},
+                {"text": "30 min", "callback_data": "set_int_1800"},
+            ]
+        ]
+    }
+    
+    await asyncio.sleep(10) # Wait for startup
+    print("[Telegram] Started interactive button polling loop.")
+    
+    # State tracking
+    awaiting_interval = False
+    
+    while True:
+        try:
+            updates = await asyncio.to_thread(get_telegram_updates, offset=last_update_id)
+            
+            for update in updates:
+                last_update_id = update["update_id"] + 1
+                
+                # 1. Handle Callback Queries (Inline Buttons)
+                if "callback_query" in update:
+                    cb = update["callback_query"]
+                    chat_id = str(cb.get("message", {}).get("chat", {}).get("id", ""))
+                    data = cb.get("data", "")
+                    
+                    if target_chat_id and chat_id != target_chat_id: continue
+                    
+                    if data.startswith("set_int_"):
+                        new_seconds = int(data.split("_")[-1])
+                        set_crypto_sniper_interval(new_seconds)
+                        awaiting_interval = False # Reset state
+                        send_telegram_notification(
+                            f"✅ <b>Interval Updated</b>\nFrequency: {new_seconds//60} min ({new_seconds}s)",
+                            reply_markup=main_menu
+                        )
+                    continue
+
+                # 2. Handle Regular Messages / Text Buttons
+                message = update.get("message", {})
+                chat_id = str(message.get("chat", {}).get("id", ""))
+                text = message.get("text", "").strip()
+                
+                if target_chat_id and chat_id != target_chat_id:
+                    continue
+                
+                # Check if text is just a number (minutes) AND we are waiting for it
+                if text.isdigit():
+                    if awaiting_interval:
+                        mins = int(text)
+                        if 0 < mins <= 1440: 
+                            secs = mins * 60
+                            set_crypto_sniper_interval(secs)
+                            awaiting_interval = False # Success - reset state
+                            send_telegram_notification(
+                                f"🚀 <b>Configuration Updated!</b>\nNew Sniper frequency: <b>{mins} min</b>.\n"
+                                "I am now moving to the updated schedule.",
+                                reply_markup=main_menu
+                            )
+                        else:
+                            send_telegram_notification("❌ Please enter 1 to 1440 minutes.", reply_markup=main_menu)
+                    else:
+                        # Ignore numbers if not explicitly asked
+                        pass
+                    continue
+                
+                # For any other command, we reset the awaiting state
+                awaiting_interval = False
+
+                if text == "/start" or text == "🔄 Help" or text == "/help" or not text:
+                    send_telegram_notification(
+                        "👋 <b>Crypto Sniper Control Panel</b>\nUse the buttons below to manage your AI agent.",
+                        reply_markup=main_menu
+                    )
+                
+                elif text == "📊 Status" or text == "/status":
+                    curr = get_crypto_sniper_interval()
+                    from market_intel import GEMINI_API_KEY, GROQ_API_KEY
+                    ai_status = "Active" if (GEMINI_API_KEY or GROQ_API_KEY) else "Inactive"
+                    status_msg = (
+                        "🤖 <b>Bot Status</b>\n"
+                        f"• Sniper Interval: <b>{curr//60} min</b> ({curr}s)\n"
+                        f"• AI Capability: {ai_status}\n"
+                        "• Status: 🟢 Running"
+                    )
+                    send_telegram_notification(status_msg, reply_markup=main_menu)
+                
+                elif text == "⏱ Set Interval" or text.startswith("/interval"):
+                    awaiting_interval = True # Enter "waiting" state
+                    send_telegram_notification(
+                        "⌛ <b>Awaiting Interval Input</b>\nPlease type the number of <b>minutes</b> and send it now.",
+                        reply_markup=main_menu
+                    )
+                
+                elif text == "🏓 Ping" or text == "/ping":
+                    send_telegram_notification("🏓 Pong! Your AI is responsive.", reply_markup=main_menu)
+                
+                # Direct interval command handling
+                elif text.startswith("/interval "):
+                    try:
+                        new_val = int(text.split(" ")[1])
+                        set_crypto_sniper_interval(new_val)
+                        send_telegram_notification(f"✅ Interval set to {new_val}s", reply_markup=main_menu)
+                    except:
+                        pass
+
+        except Exception as e:
+            print(f"[Telegram Loop Error] {e}")
+            
+        await asyncio.sleep(5) 
+
+
 BACKGROUND_TASK_REGISTRY = {
     "prices": update_position_prices,
     "profit_history": record_profit_history,
@@ -721,6 +891,8 @@ BACKGROUND_TASK_REGISTRY = {
     "macro_signals": refresh_macro_signal_snapshots_loop,
     "etf_flows": refresh_etf_flow_snapshots_loop,
     "stock_analysis": refresh_stock_analysis_snapshots_loop,
+    "crypto_sniper": refresh_crypto_sniper_snapshots_loop,
+    "telegram_polling": telegram_command_polling_loop,
 }
 
 

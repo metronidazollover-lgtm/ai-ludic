@@ -41,3 +41,7 @@ REPLY_PUBLISH_REWARD = 2       # Points for replying to a strategy/discussion
 
 # Environment
 ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
+
+# Telegram Notifications
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "").strip()

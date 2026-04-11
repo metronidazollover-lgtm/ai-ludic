@@ -280,6 +280,33 @@ class DatabaseConnection:
         return getattr(self._connection, name)
 
 
+def _get_sqlite_connection(db_path: str, retries: int = 5, delay: float = 0.5):
+    """Attempt to connect to SQLite with retries and WAL setup."""
+    last_error = None
+    for attempt in range(retries):
+        try:
+            # Increase connection timeout to 30s
+            conn = sqlite3.connect(db_path, timeout=30.0)
+            conn.row_factory = sqlite3.Row
+            
+            # Enable WAL mode for better concurrency
+            # In SQLite, setting journal_mode to WAL can fail if another connection is holding a lock
+            conn.execute("PRAGMA journal_mode=WAL")
+            conn.execute("PRAGMA busy_timeout=30000")
+            
+            # Verify WAL set (optional but helpful for debug)
+            return conn
+        except sqlite3.OperationalError as e:
+            last_error = e
+            if "database is locked" in str(e).lower() or "unable to open database file" in str(e).lower():
+                time.sleep(delay * (attempt + 1))
+                continue
+            raise e
+    
+    # If we get here, all retries failed
+    raise last_error or sqlite3.OperationalError("Failed to connect to SQLite after retries")
+
+
 def get_db_connection():
     """Get database connection. Supports both SQLite and PostgreSQL."""
     if using_postgres():
@@ -293,12 +320,9 @@ def get_db_connection():
     db_path = _SQLITE_DB_PATH
     os.makedirs(os.path.dirname(db_path), exist_ok=True)
 
-    conn = sqlite3.connect(db_path, timeout=30.0)
-    conn.row_factory = sqlite3.Row
-
-    # Enable WAL mode for better concurrent access
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA busy_timeout=30000")
+    # Use the robust retry wrapper
+    import time
+    conn = _get_sqlite_connection(db_path)
 
     return DatabaseConnection(conn, "sqlite")
 
