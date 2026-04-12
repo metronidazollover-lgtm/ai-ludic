@@ -1,61 +1,55 @@
-import requests
-import html
-from typing import Optional
-from config import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
+"""
+Telegram Notification Service
+"""
 
-def send_telegram_notification(text: str, reply_markup: Optional[dict] = None):
-    """
-    Send a message to a Telegram chat using the bot API.
-    Supports HTML and optional reply_markup (keyboards).
-    """
+import os
+import requests
+import json
+from typing import Optional, List, Dict, Any
+
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "").strip()
+
+def send_telegram_notification(message: str, reply_markup: Optional[Dict[str, Any]] = None) -> bool:
+    """Send a notification to the configured Telegram chat."""
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
-        print("[Telegram] Skip: Missing Bot Token or Chat ID")
+        print("[Telegram] Missing token or chat ID. Skipping notification.")
         return False
-        
+
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-    
-    # Try sending with HTML formatting first
     payload = {
         "chat_id": TELEGRAM_CHAT_ID,
-        "text": text,
-        "parse_mode": "HTML" 
+        "text": message,
+        "parse_mode": "HTML",
+        "disable_web_page_preview": True
     }
     
     if reply_markup:
         payload["reply_markup"] = reply_markup
-    
+
     try:
-        response = requests.post(url, json=payload, timeout=10)
-        
-        # If HTML fails (e.g. bad tags), try plain text as fallback
-        if response.status_code == 400 and "can't parse entities" in response.text:
-            print("[Telegram] HTML parsing failed, sending as plain text...")
-            # Simple escape: strip <b> tags and hope for the best, or just send plain
-            plain_text = text.replace("<b>", "").replace("</b>", "")
-            payload["text"] = plain_text
-            payload.pop("parse_mode", None)
-            response = requests.post(url, json=payload, timeout=10)
-            
+        response = requests.post(url, json=payload, timeout=15)
         response.raise_for_status()
         return True
     except Exception as e:
-        print(f"[Telegram Error] {e}")
+        print(f"[Telegram Error] Failed to send message: {e}")
         return False
 
-def get_telegram_updates(offset=None):
-    """
-    Poll for new messages from the Telegram bot.
-    """
+def get_telegram_updates(offset: Optional[int] = None) -> List[Dict[str, Any]]:
+    """Poll for new updates from Telegram."""
     if not TELEGRAM_BOT_TOKEN:
         return []
-        
+
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/getUpdates"
-    params = {"timeout": 10, "offset": offset}
-    
+    params = {"timeout": 30}
+    if offset:
+        params["offset"] = offset
+
     try:
-        response = requests.get(url, params=params, timeout=15)
+        response = requests.get(url, params=params, timeout=35)
         response.raise_for_status()
-        return response.json().get("result", [])
+        data = response.json()
+        return data.get("result", [])
     except Exception as e:
-        print(f"[Telegram Polling Error] {e}")
+        print(f"[Telegram Error] Failed to get updates: {e}")
         return []

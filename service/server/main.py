@@ -1,17 +1,7 @@
 """
-AI-Trader Backend Server
-
-项目结构：
-- config.py   : 配置和环境变量
-- database.py : 数据库初始化和连接
-- utils.py    : 通用工具函数
-- tasks.py    : 后台任务
-- services.py : 业务逻辑服务
-- routes.py   : API路由定义
-- main.py     : 应用入口
+AI-Trader Backend Server - Crypto Sniper Mode
 """
 
-import secrets
 import logging
 import os
 from logging.handlers import RotatingFileHandler
@@ -39,7 +29,6 @@ from cache import get_cache_status
 from database import init_database, get_database_status
 from routes import create_app
 from tasks import (
-    _update_trending_cache,
     background_tasks_enabled_for_api,
     start_background_tasks,
 )
@@ -57,33 +46,17 @@ app = create_app()
 async def startup_event():
     """Startup event - schedule background tasks."""
     db_status = get_database_status()
-    logger.info(
-        "Database ready: backend=%s details=%s",
-        db_status.get("backend"),
-        {key: value for key, value in db_status.items() if key != "backend"},
-    )
+    logger.info("Database ready: backend=%s", db_status.get("backend"))
+    
     cache_status = get_cache_status()
-    logger.info(
-        "Cache ready: enabled=%s configured=%s available=%s prefix=%s client_installed=%s error=%s",
-        cache_status.get("enabled"),
-        cache_status.get("configured"),
-        cache_status.get("available"),
-        cache_status.get("prefix"),
-        cache_status.get("client_installed"),
-        cache_status.get("last_error"),
-    )
-    # Initialize trending cache
-    logger.info("Initializing trending cache...")
-    _update_trending_cache()
+    logger.info("Cache status: enabled=%s", cache_status.get("enabled"))
+
     if not background_tasks_enabled_for_api():
-        logger.info(
-            "API background tasks disabled. Run `python service/server/worker.py` "
-            "to process prices, profit history, settlements, and market intel."
-        )
+        logger.info("Background tasks disabled via environment config.")
         return
 
     started = start_background_tasks(logger)
-    logger.info("Background tasks started: %s", len(started))
+    logger.info("Crypto Sniper background tasks started: %s", ", ".join(started.keys()))
 
 
 # ==================== Run ====================

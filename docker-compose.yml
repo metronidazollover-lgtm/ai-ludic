@@ -10,6 +10,7 @@ services:
       - ./ai_trader_data:/app/service/server/data
     environment:
       - PYTHONPATH=/app/service/server
+      - ENABLE_API_BACKGROUND_TASKS=false
     env_file:
       - .env
     restart: always
@@ -26,16 +27,4 @@ services:
       - PYTHONPATH=/app/service/server
     env_file:
       - .env
-    restart: always
-
-  frontend:
-    build:
-      context: .
-      dockerfile: Dockerfile.frontend
-    ports:
-      - "3000:80"
-    volumes:
-      - ./service/frontend/nginx.conf:/etc/nginx/conf.d/default.conf:ro
-    depends_on:
-      - api
     restart: always

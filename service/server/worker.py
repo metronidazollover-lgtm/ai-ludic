@@ -27,8 +27,7 @@ async def main() -> None:
     if os.getenv("AI_TRADER_BACKGROUND_TASKS") is None:
         os.environ["AI_TRADER_BACKGROUND_TASKS"] = DEFAULT_BACKGROUND_TASKS
 
-    if os.getenv("PROFIT_HISTORY_PRUNE_ON_WORKER_START", "true").strip().lower() in {"1", "true", "yes", "on"}:
-        await asyncio.to_thread(_prune_profit_history)
+
 
     tasks = start_background_tasks(logger)
     if not tasks:
