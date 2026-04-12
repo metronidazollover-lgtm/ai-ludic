@@ -8,8 +8,11 @@ import asyncio
 import json
 import os
 import time
+import logging
 from datetime import datetime, timedelta, timezone
 from typing import Optional, Dict, Any
+
+logger = logging.getLogger(__name__)
 
 def _env_bool(name: str, default: bool = False) -> bool:
     raw = os.getenv(name)
@@ -34,22 +37,23 @@ async def refresh_crypto_sniper_snapshots_loop():
 
     while True:
         try:
-            print("[Crypto Sniper] Scouting for opportunities...")
+            print("[Crypto Sniper] Scouting for opportunities...", flush=True)
             result = await asyncio.to_thread(refresh_crypto_sniper_snapshot)
             if "symbol" in result:
-                print(
-                    "[Crypto Sniper] Found opportunity: "
-                    f"symbol={result.get('symbol')} "
-                    f"signal={result.get('signal')}"
-                )
+                msg = f"[Crypto Sniper] Found opportunity: symbol={result.get('symbol')} signal={result.get('signal')}"
+                print(msg, flush=True)
+                logger.info(msg)
             else:
-                print(f"[Crypto Sniper] No clear opportunity: {result.get('message')}")
+                msg = f"[Crypto Sniper] No clear opportunity: {result.get('message')}"
+                print(msg, flush=True)
         except Exception as e:
-            print(f"[Crypto Sniper Error] {e}")
+            err_msg = f"[Crypto Sniper Error] {e}"
+            print(err_msg, flush=True)
+            logger.error(err_msg)
 
         from market_intel import get_crypto_sniper_interval
         current_interval = get_crypto_sniper_interval()
-        print(f"[Crypto Sniper] Task complete. Sleeping {current_interval}s until next hunt...")
+        print(f"[Crypto Sniper] Task complete. Sleeping {current_interval}s until next hunt...", flush=True)
         await asyncio.sleep(current_interval)
 
 async def telegram_command_polling_loop():
@@ -71,7 +75,7 @@ async def telegram_command_polling_loop():
     }
     
     await asyncio.sleep(10)
-    print("[Telegram] Started interactive button polling loop.")
+    print("[Telegram] Started interactive button polling loop.", flush=True)
     
     awaiting_interval = False
     
@@ -147,7 +151,7 @@ async def telegram_command_polling_loop():
                     send_telegram_notification("🏓 Pong! Your AI is responsive.", reply_markup=main_menu)
 
         except Exception as e:
-            print(f"[Telegram Loop Error] {e}")
+            print(f"[Telegram Loop Error] {e}", flush=True)
             
         await asyncio.sleep(5) 
 
@@ -156,18 +160,12 @@ DEFAULT_BACKGROUND_TASKS = "crypto_sniper,telegram_polling"
 BACKGROUND_TASK_REGISTRY = {
     "crypto_sniper": refresh_crypto_sniper_snapshots_loop,
     "telegram_polling": telegram_command_polling_loop,
-    "prices": None,          # Ignored legacy task
-    "profit_history": None,  # Ignored legacy task
 }
-
-def _prune_profit_history():
-    """Legacy stub for pruning profit history."""
-    pass
 
 def background_tasks_enabled_for_api() -> bool:
     return _env_bool("ENABLE_API_BACKGROUND_TASKS", True)
 
-def start_background_tasks(logger) -> Dict[str, asyncio.Task]:
+def start_background_tasks(logger_arg) -> Dict[str, asyncio.Task]:
     """Start enabled background tasks based on AI_TRADER_BACKGROUND_TASKS environment variable."""
     requested_raw = os.getenv("AI_TRADER_BACKGROUND_TASKS", DEFAULT_BACKGROUND_TASKS)
     requested = {t.strip().lower() for t in requested_raw.split(",") if t.strip()}
@@ -175,6 +173,6 @@ def start_background_tasks(logger) -> Dict[str, asyncio.Task]:
     tasks = {}
     for name, func in BACKGROUND_TASK_REGISTRY.items():
         if name in requested and func is not None:
-            logger.info(f"Starting background task: {name}")
+            logger_arg.info(f"Starting background task: {name}")
             tasks[name] = asyncio.create_task(func())
     return tasks

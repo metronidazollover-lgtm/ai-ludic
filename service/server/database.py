@@ -117,27 +117,52 @@ def init_database():
         )
     """)
 
-    # Crypto Sniper Snapshots (Klines/Opportunities)
+    # Crypto Sniper Snapshots (Opportunities & AI Context)
     cursor.execute("""
-        CREATE TABLE IF NOT EXISTS market_news_snapshots (
+        CREATE TABLE IF NOT EXISTS stock_analysis_snapshots (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            category TEXT NOT NULL,
-            snapshot_key TEXT NOT NULL,
-            items_json TEXT NOT NULL,
-            summary_json TEXT NOT NULL,
-            created_at TEXT DEFAULT (datetime('now'))
+            symbol TEXT NOT NULL,
+            market TEXT NOT NULL,
+            analysis_id TEXT UNIQUE NOT NULL,
+            current_price REAL,
+            currency TEXT,
+            signal TEXT,
+            signal_score INTEGER,
+            trend_status TEXT,
+            support_levels_json TEXT,
+            resistance_levels_json TEXT,
+            bullish_factors_json TEXT,
+            risk_factors_json TEXT,
+            summary_text TEXT,
+            analysis_json TEXT,
+            created_at TEXT NOT NULL
         )
     """)
 
-    # High-conviction signals log (for telegram tracking)
+    # ID Sequence for signals
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS signal_sequence (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            created_at TEXT NOT NULL
+        )
+    """)
+
+    # High-conviction signals log (for marketplace and tracking)
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS signals (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
+            signal_id INTEGER,
             agent_id INTEGER,
+            message_type TEXT,
+            market TEXT,
+            signal_type TEXT,
             symbol TEXT NOT NULL,
             side TEXT,
             entry_price REAL,
+            exit_price REAL,
+            title TEXT,
             content TEXT,
+            timestamp INTEGER,
             created_at TEXT NOT NULL
         )
     """)

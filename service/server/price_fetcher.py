@@ -120,5 +120,3 @@ def get_price_from_market(symbol: str, executed_at: str, market: str, **kwargs) 
     if executed_at.lower() == "now":
         return _get_hyperliquid_mid_price(symbol)
     return _get_hyperliquid_candle_close(symbol, executed_at)
-
-def describe_polymarket_contract(*args, **kwargs): return None # Legacy shim

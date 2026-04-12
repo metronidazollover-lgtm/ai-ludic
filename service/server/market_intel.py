@@ -1,10 +1,6 @@
 """
-Market intelligence snapshots and read models.
-
-第一阶段先实现统一的金融新闻聚合快照：
-- 后台统一从 Alpha Vantage NEWS_SENTIMENT 拉取
-- 存入本地快照表
-- 前端和 API 只读消费快照
+Market intelligence snapshots and read models for Crypto Sniper.
+Focused on Hyperliquid market data, funding rates, and AI-driven volatility analysis.
 """
 
 from __future__ import annotations
@@ -124,13 +120,7 @@ def _gemini_generate_text(prompt: str, system_instruction: Optional[str] = None)
         "gemini-1.5-flash-latest"
     ]
 
-    # 1. Try Groq FIRST (Primary - speed and reliability)
-    if GROQ_API_KEY:
-        groq_result = _groq_generate_text(prompt, system_instruction=system_instruction)
-        if groq_result:
-            return groq_result
-
-    # 2. Gemini Fallback Chain (Secondary)
+    # 1. Gemini Chain (Primary)
     headers = {"Content-Type": "application/json"}
     payload: dict[str, Any] = {
         "contents": [{"parts": [{"text": prompt}]}],
@@ -181,6 +171,13 @@ def _gemini_generate_text(prompt: str, system_instruction: Optional[str] = None)
         except Exception as e:
             # For connection/timeout errors, try next fallback
             pass
+
+    # 2. Try Groq LAST (Final Fallback - reliable Llama 3.3)
+    if GROQ_API_KEY:
+        print("[AI Fallback] Gemini chain exhausted. Trying Groq/Llama...")
+        groq_result = _groq_generate_text(prompt, system_instruction=system_instruction)
+        if groq_result:
+            return groq_result
 
     if any_429:
         # Both Groq and Gemini are rate-limited - forced break
@@ -549,6 +546,11 @@ def _build_sniper_analysis(symbol: str) -> dict[str, Any]:
         "summary": summary,
         "analysis": ai_data
     }
+    # Final Safety Check: Enforce 80% confidence threshold strictly in code
+    if confidence < 80:
+        print(f"[Crypto Sniper] AI signal for {symbol} rejected due to low confidence: {confidence}% (Required: 80%)")
+        return None
+
     return analysis
 
 
@@ -593,7 +595,8 @@ def refresh_crypto_sniper_snapshot() -> dict[str, Any]:
         recommendation = "Long" if analysis["signal"] == "buy" else "Short"
         import html
         content = (
-            f"🧠 <b>AI Model:</b> {model_name}\n\n"
+            f"🧠 <b>AI Model:</b> {model_name}\n"
+            f"📊 <b>Confidence:</b> {analysis['signal_score']}%\n\n"
             f"{html.escape(analysis['summary'])}\n\n"
             f"Recommendation: <b>{recommendation}</b>\n"
             f"🎯 Recommended Leverage: {ai_data.get('leverage', '5x')}\n"
