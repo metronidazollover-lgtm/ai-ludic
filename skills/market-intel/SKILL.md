@@ -10,7 +10,7 @@ Use this skill to fetch read-only crypto market intelligence. This is intended t
 ## Available Read-Only Data
 
 - **Crypto Context**: General market sentiment and BTC-led trends.
-- **Funding Analysis**: Internal data on Hyperliquid funding rates.
+- **Funding Analysis**: Internal data on Bybit funding rates.
 - **Volume Heatmaps**: Identification of unusual trading activity.
 
 ## Usage Rule

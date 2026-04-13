@@ -27,13 +27,19 @@ def send_telegram_notification(message: str, reply_markup: Optional[Dict[str, An
     if reply_markup:
         payload["reply_markup"] = reply_markup
 
-    try:
-        response = requests.post(url, json=payload, timeout=15)
-        response.raise_for_status()
-        return True
-    except Exception as e:
-        print(f"[Telegram Error] Failed to send message: {e}")
-        return False
+    import time
+    for attempt in range(3):
+        try:
+            response = requests.post(url, json=payload, timeout=15)
+            response.raise_for_status()
+            return True
+        except Exception as e:
+            if attempt < 2:
+                time.sleep(2)
+                continue
+            print(f"[Telegram Error] Failed to send message (Attempt {attempt+1}): {e}")
+            return False
+    return False
 
 def get_telegram_updates(offset: Optional[int] = None) -> List[Dict[str, Any]]:
     """Poll for new updates from Telegram."""

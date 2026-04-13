@@ -1,73 +1,68 @@
 """
-Tasks Module
-
-后台任务管理
+Tasks Module - Advanced Sniper Control (v7)
 """
 
 import asyncio
-import json
 import os
-import time
 import logging
-from datetime import datetime, timedelta, timezone
-from typing import Optional, Dict, Any
+from typing import Dict
 
 logger = logging.getLogger(__name__)
 
-def _env_bool(name: str, default: bool = False) -> bool:
-    raw = os.getenv(name)
-    if raw is None:
-        return default
-    return raw.strip().lower() in {"1", "true", "yes", "on"}
-
-def _env_int(name: str, default: int, minimum: Optional[int] = None) -> int:
-    try:
-        value = int(os.getenv(name, str(default)))
-    except Exception:
-        value = default
-    if minimum is not None:
-        value = max(minimum, value)
-    return value
-
 async def refresh_crypto_sniper_snapshots_loop():
     """Background task to refresh Crypto Sniper snapshots."""
-    from market_intel import refresh_crypto_sniper_snapshot
+    print("[Debug] refresh_crypto_sniper_snapshots_loop started.", flush=True)
+    from market_intel import refresh_crypto_sniper_snapshot, get_crypto_sniper_interval
 
-    await asyncio.sleep(15)
+    await asyncio.sleep(15) # Initial stability delay
 
     while True:
         try:
-            print("[Crypto Sniper] Scouting for opportunities...", flush=True)
+            print("[Crypto Sniper] Starting new hunt cycle...", flush=True)
             result = await asyncio.to_thread(refresh_crypto_sniper_snapshot)
-            if "symbol" in result:
-                msg = f"[Crypto Sniper] Found opportunity: symbol={result.get('symbol')} signal={result.get('signal')}"
-                print(msg, flush=True)
-                logger.info(msg)
-            else:
-                msg = f"[Crypto Sniper] No clear opportunity: {result.get('message')}"
-                print(msg, flush=True)
+            if result and result.get("symbol"):
+                print(f"[Crypto Sniper] Cycle complete. Last found: {result.get('symbol')}", flush=True)
         except Exception as e:
-            err_msg = f"[Crypto Sniper Error] {e}"
-            print(err_msg, flush=True)
-            logger.error(err_msg)
+            print(f"[Crypto Sniper Error] {e}", flush=True)
+            logger.error(f"Sniper loop error: {e}")
 
-        from market_intel import get_crypto_sniper_interval
         current_interval = get_crypto_sniper_interval()
-        print(f"[Crypto Sniper] Task complete. Sleeping {current_interval}s until next hunt...", flush=True)
         await asyncio.sleep(current_interval)
+
+async def market_sync_loop():
+    """Background task to sync market metadata (v8.0)."""
+    from market_intel import sync_market_metadata
+    
+    await asyncio.sleep(30) # Wait for initial stability
+    
+    while True:
+        try:
+            print("[Syncer] Triggering market metadata update...", flush=True)
+            await asyncio.to_thread(sync_market_metadata)
+        except Exception as e:
+            print(f"[Syncer Task Error] {e}", flush=True)
+            
+        # Sync every 12 hours
+        await asyncio.sleep(12 * 3600)
 
 async def telegram_command_polling_loop():
     """Poll for Telegram commands to control the bot dynamically."""
     from notifications import get_telegram_updates, send_telegram_notification
-    from market_intel import get_crypto_sniper_interval, set_crypto_sniper_interval
-    import os
+    from market_intel import (
+        get_crypto_sniper_interval, set_crypto_sniper_interval,
+        get_scout_limit, set_scout_limit,
+        get_audit_limit, set_audit_limit,
+        get_min_volatility, set_min_volatility,
+        get_bot_mode, set_bot_mode
+    )
     
     last_update_id = None
     target_chat_id = str(os.getenv("TELEGRAM_CHAT_ID", ""))
     
     main_menu = {
         "keyboard": [
-            [{"text": "📊 Status"}, {"text": "⏱ Set Interval"}],
+            [{"text": "📊 Status"}, {"text": "🛡️ Mode"}, {"text": "⏱ Interval"}],
+            [{"text": "🔍 Scout Lim"}, {"text": "🧠 Audit Lim"}, {"text": "📉 Min Vol"}],
             [{"text": "🏓 Ping"}, {"text": "🔄 Help"}]
         ],
         "resize_keyboard": True,
@@ -75,9 +70,9 @@ async def telegram_command_polling_loop():
     }
     
     await asyncio.sleep(10)
-    print("[Telegram] Started interactive button polling loop.", flush=True)
+    print("[Telegram] Started interactive button polling loop (v7).", flush=True)
     
-    awaiting_interval = False
+    awaiting_input = None # States: "interval", "scout", "audit", "vol"
     
     while True:
         try:
@@ -85,73 +80,78 @@ async def telegram_command_polling_loop():
             
             for update in updates:
                 last_update_id = update["update_id"] + 1
-                
-                if "callback_query" in update:
-                    cb = update["callback_query"]
-                    chat_id = str(cb.get("message", {}).get("chat", {}).get("id", ""))
-                    data = cb.get("data", "")
-                    if target_chat_id and chat_id != target_chat_id: continue
-                    
-                    if data.startswith("set_int_"):
-                        new_seconds = int(data.split("_")[-1])
-                        set_crypto_sniper_interval(new_seconds)
-                        awaiting_interval = False
-                        send_telegram_notification(
-                            f"✅ <b>Interval Updated</b>\nFrequency: {new_seconds//60} min ({new_seconds}s)",
-                            reply_markup=main_menu
-                        )
-                    continue
-
                 message = update.get("message", {})
                 chat_id = str(message.get("chat", {}).get("id", ""))
                 text = message.get("text", "").strip()
                 
-                if target_chat_id and chat_id != target_chat_id:
-                    continue
+                if target_chat_id and chat_id != target_chat_id: continue
                 
-                if text.isdigit() and awaiting_interval:
-                    mins = int(text)
-                    if 0 < mins <= 1440: 
-                        secs = mins * 60
-                        set_crypto_sniper_interval(secs)
-                        awaiting_interval = False
-                        send_telegram_notification(
-                            f"🚀 <b>Configuration Updated!</b>\nNew Sniper frequency: <b>{mins} min</b>.",
-                            reply_markup=main_menu
-                        )
-                    else:
-                        send_telegram_notification("❌ Please enter 1 to 1440 minutes.", reply_markup=main_menu)
+                # Handle Numeric Inputs
+                if text.replace('.','',1).isdigit() and awaiting_input:
+                    try:
+                        val = float(text)
+                        if awaiting_input == "interval":
+                            set_crypto_sniper_interval(int(val) * 60)
+                            msg = f"✅ <b>Interval:</b> {int(val)} min"
+                        elif awaiting_input == "scout":
+                            set_scout_limit(int(val))
+                            msg = f"✅ <b>Scout Limit:</b> Top {int(val)}"
+                        elif awaiting_input == "audit":
+                            set_audit_limit(int(val))
+                            msg = f"✅ <b>AI Audit Limit:</b> {int(val)} coins"
+                        elif awaiting_input == "vol":
+                            set_min_volatility(val)
+                            msg = f"✅ <b>Min Vol:</b> {val}%"
+                        
+                        awaiting_input = None
+                        send_telegram_notification(msg, reply_markup=main_menu)
+                    except Exception as e:
+                        send_telegram_notification(f"❌ Error: {e}", reply_markup=main_menu)
                     continue
-                
-                awaiting_interval = False
 
-                if text == "/start" or text == "🔄 Help" or text == "/help" or not text:
-                    send_telegram_notification(
-                        "👋 <b>Crypto Sniper Control Panel</b>\nUse the buttons below to manage your AI agent.",
-                        reply_markup=main_menu
+                # Handle Commands
+                awaiting_input = None
+                if text in ["/start", "🔄 Help", "/help"]:
+                    send_telegram_notification("👋 <b>Sniper V7 Panel</b>\nUse buttons to control the hunt.", reply_markup=main_menu)
+                
+                elif text == "📊 Status":
+                    status_text = (
+                        "🤖 <b>Bybit Sniper Status</b>\n"
+                        f"• Mode: <b>{get_bot_mode()}</b>\n"
+                        f"• Interval: <b>{get_crypto_sniper_interval()//60} min</b>\n"
+                        f"• Scout: <b>Top {get_scout_limit()}</b>\n"
+                        f"• Audit: <b>{get_audit_limit()} symbols</b>\n"
+                        f"• Min Vol: <b>{get_min_volatility()}%</b>\n"
+                        "• Status: 🔘 Active"
                     )
-                elif text == "📊 Status" or text == "/status":
-                    curr = get_crypto_sniper_interval()
-                    from market_intel import GEMINI_API_KEY, GROQ_API_KEY
-                    ai_status = "Active" if (GEMINI_API_KEY or GROQ_API_KEY) else "Inactive"
-                    status_msg = (
-                        "🤖 <b>Bot Status</b>\n"
-                        f"• Sniper Interval: <b>{curr//60} min</b> ({curr}s)\n"
-                        f"• AI Capability: {ai_status}\n"
-                        "• Status: 🟢 Running"
-                    )
-                    send_telegram_notification(status_msg, reply_markup=main_menu)
-                elif text == "⏱ Set Interval":
-                    awaiting_interval = True
-                    send_telegram_notification(
-                        "⌛ <b>Awaiting Interval Input</b>\nPlease type the number of <b>minutes</b> and send it now.",
-                        reply_markup=main_menu
-                    )
-                elif text == "🏓 Ping" or text == "/ping":
-                    send_telegram_notification("🏓 Pong! Your AI is responsive.", reply_markup=main_menu)
+                    send_telegram_notification(status_text, reply_markup=main_menu)
+                
+                elif text == "🛡️ Mode":
+                    new_mode = "Aggressive" if get_bot_mode() == "Conservative" else "Conservative"
+                    set_bot_mode(new_mode)
+                    send_telegram_notification(f"🔄 <b>Mode Switched:</b> {new_mode}", reply_markup=main_menu)
+                
+                elif text == "⏱ Interval":
+                    awaiting_input = "interval"
+                    send_telegram_notification("⌛ <b>Enter Interval (min):</b>", reply_markup=main_menu)
+                
+                elif text == "🔍 Scout Lim":
+                    awaiting_input = "scout"
+                    send_telegram_notification("⌛ <b>Enter Scout Depth (10-100):</b>", reply_markup=main_menu)
+                
+                elif text == "🧠 Audit Lim":
+                    awaiting_input = "audit"
+                    send_telegram_notification("⌛ <b>Enter AI Audit Max (1-10):</b>", reply_markup=main_menu)
+                
+                elif text == "📉 Min Vol":
+                    awaiting_input = "vol"
+                    send_telegram_notification("⌛ <b>Enter Min Vol %:</b>", reply_markup=main_menu)
+                
+                elif text == "🏓 Ping":
+                    send_telegram_notification("🏓 Pong (v7)!", reply_markup=main_menu)
 
         except Exception as e:
-            print(f"[Telegram Loop Error] {e}", flush=True)
+            print(f"[Telegram Error] {e}", flush=True)
             
         await asyncio.sleep(5) 
 
@@ -160,19 +160,12 @@ DEFAULT_BACKGROUND_TASKS = "crypto_sniper,telegram_polling"
 BACKGROUND_TASK_REGISTRY = {
     "crypto_sniper": refresh_crypto_sniper_snapshots_loop,
     "telegram_polling": telegram_command_polling_loop,
+    "market_syncer": market_sync_loop,
 }
 
-def background_tasks_enabled_for_api() -> bool:
-    return _env_bool("ENABLE_API_BACKGROUND_TASKS", True)
-
 def start_background_tasks(logger_arg) -> Dict[str, asyncio.Task]:
-    """Start enabled background tasks based on AI_TRADER_BACKGROUND_TASKS environment variable."""
-    requested_raw = os.getenv("AI_TRADER_BACKGROUND_TASKS", DEFAULT_BACKGROUND_TASKS)
-    requested = {t.strip().lower() for t in requested_raw.split(",") if t.strip()}
-    
     tasks = {}
     for name, func in BACKGROUND_TASK_REGISTRY.items():
-        if name in requested and func is not None:
-            logger_arg.info(f"Starting background task: {name}")
-            tasks[name] = asyncio.create_task(func())
+        logger_arg.info(f"Starting background task: {name}")
+        tasks[name] = asyncio.create_task(func())
     return tasks

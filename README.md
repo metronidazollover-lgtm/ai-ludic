@@ -1,10 +1,10 @@
 # Crypto Sniper: Autonomous AI Trading Agent
 
-Autonomous trading engine specialized in **Hyperliquid** markets. The system scouts for high-volatility opportunities, analyzes them using AI (Gemini/Groq), and executes signals via Telegram.
+Autonomous trading engine specialized in **Bybit** markets. The system scouts for high-volatility opportunities, analyzes them using AI (Gemini/Groq), and executes signals via Telegram.
 
 ## 🚀 Quick Start
 
-1. **Configure Environment**: Copy `.env.example` to `.env` and fill in your API keys (Hyperliquid, Gemini/Groq, Telegram).
+1. **Configure Environment**: Copy `.env.example` to `.env` and fill in your API keys (Bybit, Gemini/Groq, Telegram).
 2. **Initialize Database**: Run the server once to initialize the streamlined schema.
 3. **Start the Bot**:
    ```bash
@@ -14,7 +14,7 @@ Autonomous trading engine specialized in **Hyperliquid** markets. The system sco
 
 ## 🧠 Core Architecture
 
-- **Scout Loop**: Monitors Top 50 Hyperliquid pairs by volume and volatility.
+- **Scout Loop**: Monitors Top 50 Bybit pairs by volume and volatility.
 - **AI Fallback Chain**: 
   1. Primary: Gemini Pro/Flash
   2. Fallback: Groq (Llama 3.3)

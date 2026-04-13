@@ -25,8 +25,8 @@ REDIS_PREFIX = os.getenv("REDIS_PREFIX", "ai_trader").strip() or "ai_trader"
 
 # Market data endpoints
 
-# Hyperliquid public info endpoint (used for crypto quotes; no API key required)
-HYPERLIQUID_API_URL = os.getenv("HYPERLIQUID_API_URL", "https://api.hyperliquid.xyz/info")
+# Bybit V5 public endpoint
+BYBIT_API_URL = os.getenv("BYBIT_API_URL", "https://api.bytick.com")
 
 # CORS
 CORS_ORIGINS = os.getenv("CLAWTRADER_CORS_ORIGINS", "").split(",") if os.getenv("CLAWTRADER_CORS_ORIGINS") else ["http://localhost:3000"]

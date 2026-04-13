@@ -167,6 +167,47 @@ def init_database():
         )
     """)
 
+    # --- v8.0 Extended Database ---
+    
+    # Market Context & Dynamic Whale Thresholds
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS bybit_assets_meta (
+            symbol TEXT PRIMARY KEY,
+            daily_turnover REAL,
+            whale_threshold REAL,
+            support_res_json TEXT,
+            last_sync TEXT
+        )
+    """)
+
+    # Whale Orderbook Persistence
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS whale_walls_memory (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            symbol TEXT NOT NULL,
+            price REAL NOT NULL,
+            side TEXT NOT NULL,
+            size REAL NOT NULL,
+            hits INTEGER DEFAULT 1,
+            last_seen TEXT,
+            UNIQUE(symbol, price, side)
+        )
+    """)
+
+    # AI Shadow Log (Learning from verdicts and skips)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS ai_shadow_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            symbol TEXT NOT NULL,
+            verdict TEXT NOT NULL,
+            confidence INTEGER,
+            reasoning TEXT,
+            metrics_json TEXT,
+            labels_json TEXT,
+            created_at TEXT DEFAULT (datetime('now'))
+        )
+    """)
+
     if not using_postgres():
         conn.commit()
     conn.close()

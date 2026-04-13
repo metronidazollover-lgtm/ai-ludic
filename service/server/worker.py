@@ -10,7 +10,7 @@ import logging
 import os
 
 from database import init_database, get_database_status
-from tasks import DEFAULT_BACKGROUND_TASKS, _prune_profit_history, start_background_tasks
+from tasks import DEFAULT_BACKGROUND_TASKS, start_background_tasks
 
 
 logging.basicConfig(

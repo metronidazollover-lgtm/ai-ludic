@@ -5,12 +5,12 @@ description: Crypto Sniper Bot Core Skill. Focus on coin analysis and Telegram s
 
 # Crypto Sniper Bot Core
 
-This is the primary instruction set for the Crypto Sniper Bot. The bot operates as a 24/7 crypto-native engine focused on identifying high-conviction trading opportunities on Hyperliquid and delivering them to Telegram.
+This is the primary instruction set for the Crypto Sniper Bot. The bot operates as a 24/7 crypto-native engine focused on identifying high-conviction trading opportunities on Bybit and delivering them to Telegram.
 
 ## Core Workflow
 
 1. **Market Data Ingestion**:
-   - The bot fetches the latest price, volume, and funding data for all active assets on Hyperliquid.
+   - The bot fetches the latest price, volume, and funding data for all active assets on Bybit.
    - It filters for assets with significant 24h volume and price action.
 
 2. **AI Analysis & Filtering**:
@@ -23,22 +23,21 @@ This is the primary instruction set for the Crypto Sniper Bot. The bot operates 
 
 ## Signal Formatting Rules (Telegram)
 
-When the model generates a signal, it MUST follow this structure:
+When the model generates a signal, it MUST follow this JSON structure in its response:
+- **labels**: Array of tags like `[BREAKOUT]`, `[RIDING_THE_WAVE]`, `[WHALE_MOVE]`, `[QUICK_SCALP]`.
+- **confidence**: High conviction >= 80% only.
+- **RRR Discipline**: Target Profit MUST be at least 2.0x the distance of Stop Loss.
 
-**[SYMBOL] Signal Briefing**
-- **Action**: BUY/SELL (Long/Short)
-- **Conviction**: [XX]%
-- **Current Price**: $[Price]
-- **Reasoning**: Concise analysis of why this trade is selected (e.g., breakout, funding rate anomaly, volume surge).
-- **Target/Stop**: Estimated levels based on current volatility.
+## Decision Rules: Risk Management
 
-## Decision Rules
-
-- **No Social Participation**: The agent does not post to strategies, discussions, or replies.
-- **No Token Required**: Direct server-to-telegram communication.
-- **Crypto-Only**: Focus strictly on Hyperliquid perps and spot markets.
+1. **RRR 1:2+**: Never propose a trade where the risk (entry to stop) is greater than half the reward (entry to target).
+2. **Stop Placement**: Always place stops behind the most recent H1/H4 structure (lows for longs, highs for shorts).
+3. **Condition Audit**: 
+    - Use RSI to avoid entries on extreme exhaustion (RSI > 85 or < 15).
+    - Use Market Snapshot to adjust conviction (Solo runners vs Sector wave).
 
 ## Prohibited Actions
+...
 
 - DO NOT attempt to register or login.
 - DO NOT use Bearer tokens or API keys for platform interactions.
