@@ -21,7 +21,14 @@ except ImportError:
     psycopg = None
     dict_row = None
 
+from pathlib import Path
+from dotenv import load_dotenv
+
 _BASE_DIR = os.path.dirname(__file__)
+# Load .env from project root
+env_path = Path(_BASE_DIR).parent.parent / ".env"
+load_dotenv(env_path)
+
 _DEFAULT_SQLITE_DB_PATH = os.path.join(_BASE_DIR, "data", "clawtrader.db")
 _SQLITE_DB_PATH = os.getenv("DB_PATH", _DEFAULT_SQLITE_DB_PATH)
 
@@ -40,9 +47,12 @@ def get_db_connection():
 
     db_path = _SQLITE_DB_PATH
     os.makedirs(os.path.dirname(db_path), exist_ok=True)
-    conn = sqlite3.connect(db_path, timeout=30.0)
+    # Use shorter timeout (10s) to avoid infinite hangs
+    conn = sqlite3.connect(db_path, timeout=10.0)
     conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
+    try:
+        conn.execute("PRAGMA journal_mode=WAL")
+    except: pass # Ignore WAL errors if DB is locked by another process
     return DatabaseConnection(conn, "sqlite")
 
 class DatabaseCursor:
@@ -202,9 +212,34 @@ def init_database():
             verdict TEXT NOT NULL,
             confidence INTEGER,
             reasoning TEXT,
+            entry REAL,
+            exit REAL,
+            stop_loss REAL,
             metrics_json TEXT,
             labels_json TEXT,
             created_at TEXT DEFAULT (datetime('now'))
+        )
+    """)
+
+    # --- v10.0 Web UI Integration ---
+
+    # Persistent System Configuration
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS system_config (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL,
+            description TEXT,
+            category TEXT,
+            updated_at TEXT DEFAULT (datetime('now'))
+        )
+    """)
+
+    # User Wallet for Emulator & Trading
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS user_wallet (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            balance_usd REAL NOT NULL DEFAULT 10000.0,
+            updated_at TEXT DEFAULT (datetime('now'))
         )
     """)
 

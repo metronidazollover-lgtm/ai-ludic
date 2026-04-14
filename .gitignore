@@ -128,3 +128,8 @@ CLAUDE.md
 /service/server/data/
 /TODO
 change.md
+# Project Data
+ai_trader_data/
+*.db
+*.sqlite
+scratch/

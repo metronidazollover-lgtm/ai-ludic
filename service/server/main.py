@@ -44,6 +44,9 @@ app = create_app()
 
 @app.on_event("startup")
 async def startup_event():
+    print("[Startup] Initializing Database...", flush=True)
+    init_database()
+    print("[Startup] Database Ready.", flush=True)
     """Startup event - schedule background tasks."""
     db_status = get_database_status()
     logger.info("Database ready: backend=%s", db_status.get("backend"))
