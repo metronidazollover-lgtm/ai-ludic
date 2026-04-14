@@ -502,7 +502,8 @@ def _call_ai_logic(prompt: str) -> dict:
         try:
             r = requests.post(url_groq, json=payload_groq, headers=headers_groq, timeout=12)
             if r.status_code == 200:
-                logger.info(content)
+                content = r.json()["choices"][0]["message"]["content"]
+                logger.info(f"Groq Response: {content}")
                 return json.loads(content)
             logger.warning(f"  [AI Warning] Groq failed (Status: {r.status_code}, Msg: {r.text[:100]}).")
         except Exception as e:
