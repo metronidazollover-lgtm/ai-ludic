@@ -26,7 +26,7 @@ REDIS_PREFIX = os.getenv("REDIS_PREFIX", "ai_trader").strip() or "ai_trader"
 # Market data endpoints
 
 # Bybit V5 public endpoint
-BYBIT_API_URL = os.getenv("BYBIT_API_URL", "https://api.bytick.com")
+BYBIT_API_URL = os.getenv("BYBIT_API_URL", "https://api.bybit.com")
 
 # CORS
 CORS_ORIGINS = os.getenv("CLAWTRADER_CORS_ORIGINS", "").split(",") if os.getenv("CLAWTRADER_CORS_ORIGINS") else ["http://localhost:3000"]

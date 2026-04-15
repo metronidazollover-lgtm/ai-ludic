@@ -4,27 +4,41 @@ services:
       context: .
       dockerfile: Dockerfile.backend
     ports:
-      - "8888:8000"
+      - "8000:8000"
     volumes:
       - .:/app
-      - ./ai_trader_data:/app/service/server/data
+      - ./ai_trader_data:/app/ai_trader_data
     environment:
       - PYTHONPATH=/app/service/server
-      - ENABLE_API_BACKGROUND_TASKS=false
+      - DB_PATH=/app/ai_trader_data/clawtrader.db
     env_file:
       - .env
+    working_dir: /app/service/server
+    command: ["python", "main.py"]
     restart: always
 
   worker:
     build:
       context: .
       dockerfile: Dockerfile.backend
-    command: ["python", "-m", "service.server.worker"]
     volumes:
       - .:/app
-      - ./ai_trader_data:/app/service/server/data
+      - ./ai_trader_data:/app/ai_trader_data
     environment:
       - PYTHONPATH=/app/service/server
+      - DB_PATH=/app/ai_trader_data/clawtrader.db
     env_file:
       - .env
+    working_dir: /app/service/server
+    command: ["python", "worker.py"]
+    restart: always
+
+  web:
+    image: node:20-alpine
+    working_dir: /app
+    volumes:
+      - ./web-ui:/app
+    ports:
+      - "5173:5173"
+    command: sh -c "npm install && npm run dev -- --host 0.0.0.0"
     restart: always

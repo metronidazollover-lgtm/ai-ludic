@@ -281,7 +281,7 @@ def _log_ai_shadow(symbol: str, verdict: dict, metrics: dict):
             json.dumps(verdict.get("labels", []))
         ))
         conn.commit()
-    except Exception as e: print(f"[Shadow Log Error] {e}")
+    except Exception as e: logger.error(f"[Shadow Log Error] {e}")
     finally: conn.close()
 
 # --- BYBIT V5 API (OPTIMIZED) ---
@@ -291,8 +291,11 @@ def _fetch_all_bybit_tickers() -> dict[str, dict]:
     try:
         res = _session.get(url, params={"category": "linear"}, timeout=15)
         if res.status_code != 200:
-            print(f"[Bybit Error] Global Ticker status: {res.status_code}", flush=True)
-            return {}
+            logger.warning(f"[Bybit Error] Global Ticker status: {res.status_code} from {url}. Retrying with backup...")
+            # Fallback to official endpoint if bytick.com fails with 403
+            res = _session.get("https://api.bybit.com/v5/market/tickers", params={"category": "linear"}, timeout=15)
+            if res.status_code != 200:
+                return {}
         data = res.json()
         if data.get("retCode") == 0:
             return {t["symbol"]: {
@@ -304,7 +307,7 @@ def _fetch_all_bybit_tickers() -> dict[str, dict]:
                 "oi": t.get("openInterest", "0")
             } for t in data["result"].get("list", [])}
         else:
-            print(f"[Bybit Error] Global Ticker retCode: {data.get('retCode')} {data.get('retMsg')}", flush=True)
+            logger.warning(f"[Bybit Error] Global Ticker retCode: {data.get('retCode')} {data.get('retMsg')}")
     except Exception as e:
         print(f"[Bybit Connection Error] {e}", flush=True)
     return {}

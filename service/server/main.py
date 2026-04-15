@@ -1,69 +1,64 @@
 """
-AI-Trader Backend Server - Crypto Sniper Mode
+AI-Trader Backend Server - Modern Refactored Mode
 """
+from contextlib import asynccontextmanager
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+import uvicorn
 
-import logging
-import os
-from logging.handlers import RotatingFileHandler
+from core.config import settings
+from core.database import engine, init_db
+from core.http import http_manager
+from core.logging_config import setup_logging, logger
+from services.state_service import state_service
+# from routes import register_routes # Assume we refactor routes to a simpler registration
 
-# Setup logging
-LOG_DIR = os.path.join(os.path.dirname(__file__), "logs")
-os.makedirs(LOG_DIR, exist_ok=True)
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup
+    setup_logging()
+    logger.info("server_starting", env=settings.ENVIRONMENT)
+    
+    # Initialize DB (if needed, though Alembic handles it)
+    # await init_db()
+    
+    # Start background tasks via task manager (to be implemented)
+    from tasks import start_background_tasks
+    bg_tasks = start_background_tasks(logger)
+    
+    yield
+    
+    # Shutdown
+    logger.info("server_shutting_down")
+    await http_manager.close_client()
+    state_service.save_state()
+    # Cancel background tasks
+    for task in bg_tasks.values():
+        task.cancel()
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s",
-    handlers=[
-        RotatingFileHandler(
-            os.path.join(LOG_DIR, "server.log"),
-            maxBytes=10 * 1024 * 1024,  # 10MB
-            backupCount=5
-        ),
-        logging.StreamHandler()
-    ]
-)
+def create_app() -> FastAPI:
+    app = FastAPI(
+        title="Crypto Sniper API",
+        version="11.0.0",
+        lifespan=lifespan
+    )
 
-logger = logging.getLogger(__name__)
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=settings.CORS_ORIGINS,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
-from cache import get_cache_status
-from database import init_database, get_database_status
-from routes import create_app
-from tasks import (
-    background_tasks_enabled_for_api,
-    start_background_tasks,
-)
+    # Register Routes
+    from routes_market import register_market_routes
+    register_market_routes(app)
+    # register_routes(app)
 
-# Initialize database
-init_database()
+    return app
 
-# Create app
 app = create_app()
 
-
-# ==================== Startup ====================
-
-@app.on_event("startup")
-async def startup_event():
-    print("[Startup] Initializing Database...", flush=True)
-    init_database()
-    print("[Startup] Database Ready.", flush=True)
-    """Startup event - schedule background tasks."""
-    db_status = get_database_status()
-    logger.info("Database ready: backend=%s", db_status.get("backend"))
-    
-    cache_status = get_cache_status()
-    logger.info("Cache status: enabled=%s", cache_status.get("enabled"))
-
-    if not background_tasks_enabled_for_api():
-        logger.info("Background tasks disabled via environment config.")
-        return
-
-    started = start_background_tasks(logger)
-    logger.info("Crypto Sniper background tasks started: %s", ", ".join(started.keys()))
-
-
-# ==================== Run ====================
-
 if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)

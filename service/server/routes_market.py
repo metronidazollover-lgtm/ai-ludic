@@ -1,94 +1,109 @@
-from fastapi import FastAPI
-from market_intel import get_market_intel_overview
+from fastapi import FastAPI, Depends, APIRouter
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, update
 from datetime import datetime, timezone
+from typing import List
+
+from core.database import get_db
+from models.trading import SystemConfig, UserWallet, AIShadowLog
+from services.market_intel import market_intel_service
+
+router = APIRouter(prefix="/api")
 
 def utc_now_iso_z() -> str:
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
+@router.get('/health')
+async def health_check():
+    return {'status': 'ok', 'timestamp': utc_now_iso_z()}
+
+@router.get('/market-intel/overview')
+async def market_intel_overview():
+    """Returns simplified crypto-only status."""
+    return {
+        "status": "active",
+        "mode": await market_intel_service._get_config("trading_mode", "Conservative"),
+        "scout_limit": await market_intel_service._get_config("scout_limit", 50),
+        "audit_limit": await market_intel_service._get_config("audit_limit", 5),
+        "interval_min": (await market_intel_service._get_config("refresh_interval", 300)) // 60,
+        "min_vol": await market_intel_service._get_config("min_volatility_pct", 0.5),
+        "connection": "optimized",
+        "last_scan": utc_now_iso_z()
+    }
+
+@router.get('/config')
+async def get_config(db: AsyncSession = Depends(get_db)):
+    """Returns all system settings with descriptions."""
+    result = await db.execute(select(SystemConfig))
+    configs = result.scalars().all()
+    return [
+        {
+            "key": c.key, 
+            "value": c.value, 
+            "description": c.description, 
+            "category": c.category
+        } for c in configs
+    ]
+
+@router.post('/config')
+async def update_config(data: dict, db: AsyncSession = Depends(get_db)):
+    """Updates specific system settings."""
+    for key, val in data.items():
+        await db.execute(
+            update(SystemConfig)
+            .where(SystemConfig.key == key)
+            .values(value=str(val))
+        )
+    await db.commit()
+    return {"status": "success"}
+
+@router.get('/wallet')
+async def get_wallet(db: AsyncSession = Depends(get_db)):
+    """Returns current virtual balance."""
+    result = await db.execute(select(UserWallet).where(UserWallet.id == 1))
+    wallet = result.scalar_one_or_none()
+    return {"balance": wallet.balance_usd if wallet else 10000.0}
+
+@router.post('/wallet')
+async def update_wallet(data: dict, db: AsyncSession = Depends(get_db)):
+    """Sets new virtual balance."""
+    balance = data.get("balance", 10000.0)
+    await db.execute(
+        update(UserWallet)
+        .where(UserWallet.id == 1)
+        .values(balance_usd=float(balance))
+    )
+    await db.commit()
+    return {"status": "success", "new_balance": balance}
+
+@router.get('/signals')
+async def get_signals(limit: int = 50, db: AsyncSession = Depends(get_db)):
+    """Returns history of AI verdicts (Shadow Log)."""
+    result = await db.execute(
+        select(AIShadowLog)
+        .order_by(AIShadowLog.created_at.desc())
+        .limit(limit)
+    )
+    logs = result.scalars().all()
+    return [
+        {
+            "symbol": l.symbol, 
+            "verdict": l.verdict, 
+            "confidence": l.confidence, 
+            "reasoning": l.reasoning, 
+            "metrics": l.metrics_json, 
+            "time": l.created_at
+        } for l in logs
+    ]
+
+@router.post('/emulator/run')
+async def run_emulator(data: dict = None):
+    """Triggers the backtest simulation based on shadow logs."""
+    from services.emulator import run_backtest_simulation
+    if data is None: data = {}
+    limit = data.get("limit", 50)
+    # Note: run_backtest_simulation should be updated to be async
+    return await run_backtest_simulation(limit=limit)
+
 def register_market_routes(app: FastAPI) -> None:
-    @app.get('/health')
-    async def health_check():
-        return {'status': 'ok', 'timestamp': utc_now_iso_z()}
-
-    @app.get('/api/market-intel/overview')
-    async def market_intel_overview():
-        """Returns simplified crypto-only status."""
-        return get_market_intel_overview()
-
-    # --- v10.0 Web UI API ---
-
-    @app.get('/api/config')
-    async def get_config():
-        """Returns all system settings with descriptions."""
-        from database import get_db_connection
-        conn = get_db_connection()
-        try:
-            cursor = conn.cursor()
-            cursor.execute("SELECT key, value, description, category FROM system_config")
-            rows = cursor.fetchall()
-            return [{"key": r[0], "value": r[1], "description": r[2], "category": r[3]} for r in rows]
-        finally: conn.close()
-
-    @app.post('/api/config')
-    async def update_config(data: dict):
-        """Updates specific system settings."""
-        from database import get_db_connection
-        conn = get_db_connection()
-        try:
-            cursor = conn.cursor()
-            for key, val in data.items():
-                cursor.execute("UPDATE system_config SET value=? WHERE key=?", (str(val), key))
-            conn.commit()
-            return {"status": "success"}
-        finally: conn.close()
-
-    @app.get('/api/wallet')
-    async def get_wallet():
-        """Returns current virtual balance."""
-        from database import get_db_connection
-        conn = get_db_connection()
-        try:
-            cursor = conn.cursor()
-            cursor.execute("SELECT balance_usd FROM user_wallet WHERE id=1")
-            row = cursor.fetchone()
-            return {"balance": row[0] if row else 10000.0}
-        finally: conn.close()
-
-    @app.post('/api/wallet')
-    async def update_wallet(data: dict):
-        """Sets new virtual balance."""
-        from database import get_db_connection
-        conn = get_db_connection()
-        try:
-            cursor = conn.cursor()
-            balance = data.get("balance", 10000.0)
-            cursor.execute("UPDATE user_wallet SET balance_usd=? WHERE id=1", (float(balance),))
-            conn.commit()
-            return {"status": "success", "new_balance": balance}
-        finally: conn.close()
-
-    @app.get('/api/signals')
-    async def get_signals(limit: int = 50):
-        """Returns history of AI verdicts (Shadow Log)."""
-        from database import get_db_connection
-        conn = get_db_connection()
-        try:
-            cursor = conn.cursor()
-            cursor.execute("""
-                SELECT symbol, verdict, confidence, reasoning, metrics_json, created_at 
-                FROM ai_shadow_log ORDER BY created_at DESC LIMIT ?
-            """, (limit,))
-            rows = cursor.fetchall()
-            return [{"symbol": r[0], "verdict": r[1], "confidence": r[2], "reasoning": r[3], "metrics": r[4], "time": r[5]} for r in rows]
-        finally: conn.close()
-
-    @app.post('/api/emulator/run')
-    async def run_emulator(data: dict = None):
-        """Triggers the backtest simulation based on shadow logs."""
-        from services.emulator import run_backtest_simulation
-        if data is None: data = {}
-        limit = data.get("limit", 50)
-        return run_backtest_simulation(limit=limit)
-
-    # Note: Legacy social/stock routes have been removed.
-    # The server now operates as a headless analysis engine.
+    app.include_router(router)
